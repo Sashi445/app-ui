@@ -1,4 +1,4 @@
-import * as React from "react";
+import React, { useEffect } from "react";
 
 import createEngine, {
   DefaultLinkModel,
@@ -11,6 +11,62 @@ import { CanvasWidget } from "@projectstorm/react-canvas-core";
 export default function () {
   // create an instance of the engine with all the defaults
   const engine = createEngine();
+  const model = new DiagramModel();
+
+  const getConnectionState = (fromPort: any, toPort: any) => {
+    const fromObj = { name: fromPort.name, id: fromPort.id };
+    const toObj = { name: toPort.name, id: toPort.id };
+    const linkObj = { src: fromObj.id, to: toObj.id };
+    return {
+      components: [fromObj, toObj],
+      links: [linkObj],
+    };
+  };
+
+  useEffect(() => {
+    model.registerListener({
+      nodesUpdated: (e: any) => {
+        console.log(e);
+      },
+      linksUpdated: (e: any) => {
+        console.log(e.link);
+        e.link.registerListener({
+          sourcePortChanged: (event: any) => {
+            console.log(event);
+          },
+          targetPortChanged: (event: any) => {
+            const fromParent = e.link.sourcePort.parent.options;
+            const toParent = event.port.parent.options;
+            const connectionState = getConnectionState(fromParent, toParent);
+            console.log(connectionState);
+            fetch("http://127.0.0.1:5000/api/state/cache", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify(connectionState),
+            })
+              .then((response) => response.json())
+              .then((data) => {
+                console.log("Success:", data);
+              })
+              .catch((error) => {
+                console.error("Error:", error);
+              });
+          },
+          selectionChanged: (event: any) => {
+            console.log("SELECTION : ", event);
+          },
+        });
+      },
+      selectionChanged: (e: any) => {
+        console.log(e);
+      },
+    });
+    return () => {
+      model.deregisterListener({});
+    };
+  }, []);
 
   // source
   const source = new DefaultNodeModel({
@@ -33,30 +89,15 @@ export default function () {
     color: "rgb(240, 1, 3)",
   });
 
-  another.setPosition(600, 700);
+  another.setPosition(500, 600);
   another.addInPort("In");
   another.addOutPort("Out");
 
   const link = outPort.link<DefaultLinkModel>(inPort);
   link.addLabel("Hello, World!");
 
-  const model = new DiagramModel();
-  const models = [source, destination, another, link];
-  model.addAll(...models);
-
+  model.addAll(source, destination, link, another);
   engine.setModel(model);
-
-  model.registerListener({
-    nodesUpdated: (e :any) => { console.log("Nodes Updated : ", e)},
-    linksUpdated: (e :any) => { console.log("Link update event : ", e) },
-    selectionChanged : (e :any) => {console.log(e)},
-    zoomUpdated: (e :any) => {console.log("zoom event : ",  e)},
-  });
-
-  link.registerListener({
-    sourcePortChanged : (e : any) => {console.log(e)},
-    selectionChanged : (e : any) => {console.log(e)}
-  })
 
   return <CanvasWidget className="canvas" engine={engine} />;
 }
